@@ -4,6 +4,7 @@ namespace PHPCD;
 use Psr\Log\LoggerInterface as Logger;
 use Lvht\MsgpackRpc\Server as RpcServer;
 use Lvht\MsgpackRpc\Handler as RpcHandler;
+use Roave\BetterReflection\Reflection\ReflectionClass;
 
 class PHPID implements RpcHandler
 {
@@ -195,7 +196,7 @@ class PHPID implements RpcHandler
 
     private function getClassInfo($name) {
         try {
-            $reflection = new \ReflectionClass($name);
+            $reflection = ReflectionClass::createFromName($name);
 
             $parent = $reflection->getParentClass();
             if ($parent) {
@@ -205,7 +206,7 @@ class PHPID implements RpcHandler
             $interfaces = array_keys($reflection->getInterfaces());
 
             return [$parent, $interfaces];
-        } catch (\ReflectionException $e) {
+        } catch (\Throwable $e) {
             return [null, []];
         }
     }

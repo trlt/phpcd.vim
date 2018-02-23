@@ -4,6 +4,11 @@ namespace PHPCD;
 use Psr\Log\LoggerInterface as Logger;
 use Lvht\MsgpackRpc\Server as RpcServer;
 use Lvht\MsgpackRpc\Handler as RpcHandler;
+use Roave\BetterReflection\Reflection\ReflectionClass;
+use Roave\BetterReflection\Reflection\ReflectionMethod;
+use Roave\BetterReflection\Reflection\ReflectionParameter;
+use Roave\BetterReflection\Reflection\ReflectionProperty;
+use Roave\BetterReflection\Reflection\ReflectionFunction;
 
 class PHPCD implements RpcHandler
 {
@@ -51,10 +56,7 @@ class PHPCD implements RpcHandler
         $this->matchType = $matchType;
     }
 
-    /**
-     *  @param array Map between modifier numbers and displayed symbols
-     */
-    private $modifier_symbols = [
+    const MODIFIER_SYMBOLS = [
         \ReflectionMethod::IS_FINAL      => '!',
         \ReflectionMethod::IS_PRIVATE    => '-',
         \ReflectionMethod::IS_PROTECTED  => '#',
@@ -118,7 +120,7 @@ class PHPCD implements RpcHandler
     {
         try {
             if ($class_name) {
-                $reflection = new \ReflectionClass($class_name);
+                $reflection = ReflectionClass::createFromName($class_name);
 
                 if ($reflection->hasMethod($method_name)) {
                     $reflection = $reflection->getMethod($method_name);
@@ -130,11 +132,12 @@ class PHPCD implements RpcHandler
                     return [$reflection->getFileName(), $line];
                 }
             } else {
-                $reflection = new \ReflectionFunction($method_name);
+                $reflection = ReflectionFunction::createFromName($method_name);
             }
 
             return [$reflection->getFileName(), $reflection->getStartLine()];
-        } catch (\ReflectionException $e) {
+        } catch (\Throwable $e) {
+            $this->logger->debug((string) $e);
             return ['', null];
         }
     }
@@ -153,7 +156,7 @@ class PHPCD implements RpcHandler
         return $classReflection->getStartLine();
     }
 
-    private function getConstPath($const_name, \ReflectionClass $reflection)
+    private function getConstPath($const_name, ReflectionClass $reflection)
     {
         $origin = $path = $reflection->getFileName();
         $origin_reflection = $reflection;
@@ -193,8 +196,8 @@ class PHPCD implements RpcHandler
             }
 
             return $this->docClass($class_name, $name, $is_method);
-        } catch (\ReflectionException $e) {
-            $this->logger->debug($e->getMessage());
+        } catch (\Throwable $e) {
+            $this->logger->debug((string) $e);
             return [null, null];
         }
     }
@@ -215,7 +218,7 @@ class PHPCD implements RpcHandler
             }
         }
 
-        $reflection = new \ReflectionFunction($name);
+        $reflection = ReflectionFunction::createFromName($name);
         $doc = $reflection->getDocComment();
         $path = $reflection->getFileName();
 
@@ -224,7 +227,7 @@ class PHPCD implements RpcHandler
 
     private function docClass($class_name, $name, $is_method)
     {
-        $reflection_class = new \ReflectionClass($class_name);
+        $reflection_class = ReflectionClass::createFromName($class_name);
         $reflection = null;
 
         if ($is_method) {
@@ -291,12 +294,9 @@ class PHPCD implements RpcHandler
     /**
      * Get the origin method reflection the inherited docComment belongs to.
      *
-     * @param $reflection_class \ReflectionClass
-     * @param $name string
-     *
-     * @return \ReflectionClass
+     * @return ReflectionMethod
      */
-    private function getReflectionFromInheritDoc($reflection_class, $method_name)
+    private function getReflectionFromInheritDoc(ReflectionClass $reflection_class, $method_name)
     {
         $interfaces = $reflection_class->getInterfaces();
 
@@ -407,7 +407,7 @@ class PHPCD implements RpcHandler
     {
         try {
             if ($class_name) {
-                $reflection = new \ReflectionClass($class_name);
+                $reflection = ReflectionClass::createFromName($class_name);
                 $reflection = $reflection->getMethod($func_name);
             } else {
                 $nsuse = $this->nsuse($path);
@@ -424,17 +424,17 @@ class PHPCD implements RpcHandler
                     }
                 }
 
-                $reflection = new \ReflectionFunction($name);
+                $reflection = ReflectionFunction::createFromName($name);
             }
 
-            /** @var \ReflectionMethod $reflection */
+            /** @var ReflectionMethod $reflection */
             foreach ($reflection->getParameters() as $parameter) {
-                /** @var \ReflectionParameter $parameter */
+                /** @var ReflectionParameter $parameter */
                 if ($parameter->getName() === $name) {
                     return $parameter->getType();
                 }
             }
-        } catch (\ReflectionException $e) {
+        } catch (\Throwable $e) {
             $this->logger->debug((string) $e);
         }
     }
@@ -467,7 +467,7 @@ class PHPCD implements RpcHandler
     {
         try {
             if ($class_name) {
-                $reflection = new \ReflectionClass($class_name);
+                $reflection = ReflectionClass::createFromName($class_name);
                 $reflection = $reflection->getMethod($name);
             } else {
                 $nsuse = $this->nsuse($path);
@@ -484,7 +484,7 @@ class PHPCD implements RpcHandler
                     }
                 }
 
-                $reflection = new \ReflectionFunction($name);
+                $reflection = ReflectionFunction::createFromName($name);
             }
             $type = (string) $reflection->getReturnType();
 
@@ -493,7 +493,7 @@ class PHPCD implements RpcHandler
             }
 
             return $type;
-        } catch (\ReflectionException $e) {
+        } catch (\Throwable $e) {
             $this->logger->debug((string) $e);
         }
     }
@@ -577,7 +577,7 @@ class PHPCD implements RpcHandler
     private function classInfo($class_name, $pattern, $is_static, $public_only)
     {
         try {
-            $reflection = new \PHPCD\Reflection\ReflectionClass($class_name);
+            $reflection = ReflectionClass::createFromName($class_name);
             $items = [];
 
             if (false !== $is_static) {
@@ -597,7 +597,7 @@ class PHPCD implements RpcHandler
                 }
             }
 
-            $methods = $reflection->getAvailableMethods($is_static, $public_only);
+            $methods = self::getAvailableMethods($reflection, $is_static, $public_only);
 
             foreach ($methods as $method) {
                 $info = $this->getMethodInfo($method, $pattern);
@@ -606,7 +606,7 @@ class PHPCD implements RpcHandler
                 }
             }
 
-            $properties = $reflection->getAvailableProperties($is_static, $public_only);
+            $properties = self::getAvailableProperties($reflection, $is_static, $public_only);
 
             foreach ($properties as $property) {
                 $info = $this->getPropertyInfo($property, $pattern);
@@ -622,21 +622,16 @@ class PHPCD implements RpcHandler
             $items = array_merge($items, $pseudo_items);
 
             return $items;
-        } catch (\ReflectionException $e) {
-            $this->logger->debug($e->getMessage());
+        } catch (\Throwable $e) {
+            $this->logger->debug((string) $e);
             return [];
         }
     }
+
     /**
      * Get class DocComment methods, from parents as well
-     *
-     * @param \ReflectionClass
-     *
-     * @return string
-     *
-     * @author yourname
      */
-    private function getAllClassDocComments(\ReflectionClass $reflection)
+    private function getAllClassDocComments(ReflectionClass $reflection)
     {
         $doc = [];
         do {
@@ -648,7 +643,7 @@ class PHPCD implements RpcHandler
         return $doc;
     }
 
-    private function getPseudoProperties(\ReflectionClass $reflection)
+    private function getPseudoProperties(ReflectionClass $reflection)
     {
         $doc = $this->getAllClassDocComments($reflection);
         $all_docs = '';
@@ -675,7 +670,7 @@ class PHPCD implements RpcHandler
         return $items;
     }
 
-    private function getPseudoMethods(\ReflectionClass $reflection)
+    private function getPseudoMethods(ReflectionClass $reflection)
     {
         $doc = $this->getAllClassDocComments($reflection);
         $all_docs = '';
@@ -758,7 +753,7 @@ class PHPCD implements RpcHandler
             return null;
         }
 
-        $reflection = new \ReflectionFunction($name);
+        $reflection = ReflectionFunction::createFromName($name);
         $params = array_map(function ($param) {
             return $param->getName();
         }, $reflection->getParameters());
@@ -772,7 +767,7 @@ class PHPCD implements RpcHandler
         ];
     }
 
-    private function getPropertyInfo($property, $pattern)
+    private function getPropertyInfo(ReflectionProperty $property, $pattern)
     {
         $name = $property->getName();
         if ($pattern && !$this->matchPattern($pattern, $name)) {
@@ -793,11 +788,7 @@ class PHPCD implements RpcHandler
         ];
     }
 
-      /**
-     * @param \ReflectionParameter $param
-     * @return string
-     */
-    private function formatParamInfo(\ReflectionParameter $param)
+    private function formatParamInfo(ReflectionParameter $param)
     {
         /* @var ReflectionClass|null $hintedClass */
         $hintedClass = $param->getClass();
@@ -823,11 +814,7 @@ class PHPCD implements RpcHandler
         return $paramString;
     }
 
-    /**
-     * @param \ReflectionMethod $param
-     * @return string
-     */
-    private function getExtraMethodInfo(\ReflectionMethod $method)
+    private function getExtraMethodInfo(ReflectionMethod $method)
     {
         $name = $method->getName();
         $declaringClass = $method->getDeclaringClass()->getName();
@@ -858,7 +845,7 @@ class PHPCD implements RpcHandler
         );
     }
 
-    private function getMethodInfo(\ReflectionMethod $method, $pattern = null)
+    private function getMethodInfo(ReflectionMethod $method, $pattern = null)
     {
         $name = $method->getName();
         if ($pattern && !$this->matchPattern($pattern, $name)) {
@@ -906,15 +893,6 @@ class PHPCD implements RpcHandler
         }
     }
 
-    /**
-     *
-     * @return array
-     */
-    private function getModifierSymbols()
-    {
-        return $this->modifier_symbols;
-    }
-
     private function getModifiers($reflection)
     {
         if ($this->disable_modifier) {
@@ -924,9 +902,8 @@ class PHPCD implements RpcHandler
         $signs = '';
 
         $modifiers = $reflection->getModifiers();
-        $symbols = $this->getModifierSymbols();
 
-        foreach ($symbols as $number => $sign) {
+        foreach (self::MODIFIER_SYMBOLS as $number => $sign) {
             if ($number & $modifiers) {
                 $signs .= $sign;
             }
@@ -1043,5 +1020,69 @@ class PHPCD implements RpcHandler
                 'icase' => 1,
             ];
         }, array_unique($classmap));
+    }
+
+    /**
+     * Get methods available for given class
+     * depending on context
+     *
+     * @param bool|null $static Show static|non static|both types
+     * @param bool public_only restrict the result to public methods
+     * @return ReflectionMethod[]
+     */
+    private static function getAvailableMethods(ReflectionClass $reflection, $static, $public_only = false)
+    {
+        $methods = $reflection->getMethods();
+
+        foreach ($methods as $key => $method) {
+            if (!self::filter($method, $static, $public_only, $reflection->getName())) {
+                unset($methods[$key]);
+            }
+        }
+
+        return $methods;
+    }
+
+    /**
+     * Get properties available for given class
+     * depending on context
+     *
+     * @param bool|null $static Show static|non static|both types
+     * @param bool public_only restrict the result to public properties
+     * @return ReflectionProperty[]
+     */
+    private static function getAvailableProperties(ReflectionClass $reflection, $static, $public_only = false)
+    {
+        $properties = $reflection->getProperties();
+
+        foreach ($properties as $key => $property) {
+            if (!self::filter($property, $static, $public_only, $reflection->getName())) {
+                unset($properties[$key]);
+            }
+        }
+
+        return $properties;
+    }
+
+    private static function filter($element, $static, $public_only, $class_name)
+    {
+        if ($static !== null && ($element->isStatic() xor $static)) {
+            return false;
+        }
+
+        if ($element->isPublic()) {
+            return true;
+        }
+
+        if ($public_only) {
+            return false;
+        }
+
+        if ($element->isProtected()) {
+            return true;
+        }
+
+        // $element is then private
+        return $element->getDeclaringClass()->getName() === $class_name;
     }
 }
