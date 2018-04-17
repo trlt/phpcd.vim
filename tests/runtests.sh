@@ -1,4 +1,4 @@
-#!/bin/bash
+#! /usr/bin/env bash
 
 set -eu
 
@@ -10,7 +10,7 @@ VU="$DIR/../../vimunit/vutest.sh"
 if [ ! -f "$VU" ]; then
 	echo "Could not run tests. Vimunit executeable not found at: '$VU'"
 else
-    cd ./fixtures
+    cd $DIR/fixtures
     if [[ $# > 0 ]]; then
         for f in $@; do
             $VU -e "nvim -u $DIR/vimrc" $f
