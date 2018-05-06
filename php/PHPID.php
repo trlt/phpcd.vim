@@ -86,8 +86,6 @@ class PHPID implements RpcHandler
     /**
      * Fetch and save class's interface and parent info
      * according the autoload_classmap.php file
-     *
-     * @param bool $is_force overwrite the exists index
      */
     public function index()
     {
@@ -98,19 +96,33 @@ class PHPID implements RpcHandler
         $count = count($files);
         $last = 0;
         for ($i = 0; $i < $count; $i++) {
-             $name = Parser::getClassName($files[$i]);
-             try {
-                 $interfaces = class_implements($name) ?: [];
-                 $parents = class_parents($name) ?: [];
-                 $this->_update($name, $parents, $interfaces);
-             } catch (\Throwable $ignore) {
-             }
+            //a fork is used to do not interrupt the whole indexing process
+            //in case something bad occurs by the following steps
+            //the fork is NOT used to speedup things
+            $pid = pcntl_fork();
+            if(! $pid){
+                 $name = Parser::getClassName($files[$i]);
+                 //echo "DBG: " . $files[$i] . ' :: ' . $name . PHP_EOL;
+                if(! is_null($name)){
+                     try {
+                         $interfaces = class_implements($name) ?: [];
+                         $parents = class_parents($name) ?: [];
+                         $this->_update($name, $parents, $interfaces);
+                     } catch (\Throwable $ignore) {
+                     }
+                }
+                //The child has done its job and musst die now
+                //otherwise it will do more jobs as expected
+                die();
+            }
+            $status = 0;
+            pcntl_waitpid(0,$status);
 
-             $percent = number_format(($i + 1) / $count * 100);
-             if ($percent != $last) {
+            $percent = number_format(($i + 1) / $count * 100);
+            if ($percent != $last) {
                  $this->server->call('vim_command', ["redraw | echo \"indexing $percent%\""]);
                  $last = $percent;
-             }
+            }
         }
         $this->server->call('vim_command', ["redraw | echo \"\""]);
     }
