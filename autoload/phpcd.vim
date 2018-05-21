@@ -95,7 +95,7 @@ function! phpcd#CompletePHP(findstart, base) " {{{
 			" special case when you've typed the class keyword and the name too,
 			" only extends and implements allowed there
 			return filter(['extends', 'implements'], 'stridx(v:val, a:base) == 0')
-		elseif context =~? 'new\s\+\\'
+		elseif context =~? 'new'
 			return rpc#request(g:phpcd_channel_id, 'classes', a:base)
 		endif " }}}
 
@@ -882,7 +882,7 @@ function! phpcd#GetClassName(start_line, context, current_namespace, imports) " 
 	endif " }}}
 endfunction " }}}
 
-function s:getArrayType(prev_class) " {{{
+function! s:getArrayType(prev_class) " {{{
 	" the iterated expression should return an array type
 	if a:prev_class =~ '\[\]$' " {{{
 		let prev_class = matchstr(a:prev_class, '\v^[^[]+')
