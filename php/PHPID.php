@@ -4,13 +4,27 @@ namespace PHPCD;
 use Psr\Log\LoggerInterface as Logger;
 use Lvht\MsgpackRpc\Server as RpcServer;
 use Lvht\MsgpackRpc\Handler as RpcHandler;
+use Zend\Db\ResultSet\ResultSet;
+use Zend\Db\Sql\Ddl;
+use Zend\Db\Sql\Sql;
+use Zend\Db\TableGateway\TableGateway;
 
 class PHPID implements RpcHandler
 {
     /**
+     * @var Adapter
+     */
+    private $db;
+
+    /**
      * @var RpcServer
      */
     private $server;
+
+    /**
+     * @var TableGateway
+     */
+    private $tblClasses;
 
     /**
      * @var Logger
@@ -23,6 +37,17 @@ class PHPID implements RpcHandler
     {
         $this->root = $root;
         $this->logger = $logger;
+    }
+
+    private function createTables(){
+        $table = new Ddl\CreateTable('classes');
+        $table->addColumn(new Ddl\Column\Varchar('name',255));
+
+        $sql = new Sql($this->db);
+        $this->db->query(
+            $sql->getSqlStringForSqlObject($table),
+            $this->db::QUERY_MODE_EXECUTE
+        );
     }
 
     public function setServer(RpcServer $server)
@@ -44,6 +69,8 @@ class PHPID implements RpcHandler
 
     private function _update($class_name, $parents, $interfaces)
     {
+        $this->tblClasses->insert(['name' => $class_name]);
+        
         foreach ($parents as $parent) {
             $this->updateParentIndex($parent, $class_name);
         }
@@ -89,6 +116,7 @@ class PHPID implements RpcHandler
      */
     public function index()
     {
+        $this->initDb();
         $this->initIndexDir();
 
         $files = $this->searchPhpFileList($this->root);
@@ -102,7 +130,6 @@ class PHPID implements RpcHandler
             $pid = pcntl_fork();
             if(! $pid){
                  $name = Parser::getClassName($files[$i]);
-                 //echo "DBG: " . $files[$i] . ' :: ' . $name . PHP_EOL;
                 if(! is_null($name)){
                      try {
                          $interfaces = class_implements($name) ?: [];
@@ -154,6 +181,16 @@ class PHPID implements RpcHandler
     private function getExtendsDir()
     {
         return $this->getIndexDir() . '/extends';
+    }
+
+    private function initDb(){
+        $this->db = DbFactory::getDb($this->root);
+        if(false === $this->db){
+            $this->db = DbFactory::getDb($this->root,true);
+            $this->createTables();
+        }
+        
+        $this->tblClasses = new TableGateway('classes',$this->db);
     }
 
     private function initIndexDir()

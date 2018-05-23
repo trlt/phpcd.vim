@@ -13,6 +13,12 @@ use Roave\BetterReflection\SourceLocator\Type\PhpInternalSourceLocator;
 use Roave\BetterReflection\SourceLocator\Type\AutoloadSourceLocator;
 use Roave\BetterReflection\SourceLocator\Type\AggregateSourceLocator;
 
+use Zend\Db\ResultSet\ResultSet;
+use Zend\Db\Sql\Select;
+use Zend\Db\Sql\Sql;
+use Zend\Db\Sql\Where;
+use Zend\Db\TableGateway\TableGateway;
+
 class PHPCD implements RpcHandler
 {
     private $disable_modifier;
@@ -27,6 +33,11 @@ class PHPCD implements RpcHandler
     private $server;
 
     private $root;
+
+    /**
+     * @var TableGateway
+     */
+    private $tblClasses;
 
     /**
      *  @param array Map between modifier numbers and displayed symbols
@@ -198,6 +209,20 @@ class PHPCD implements RpcHandler
         }
 
         return $path;
+    }
+
+    /**
+     * @return TableGateway
+     */
+    private function getTblClasses(){
+        if(! $this->tblClasses instanceof TableGateway){
+            $dba = DbFactory::getDb($this->root);
+            if(false === $dba){
+                return false;
+            }
+            $this->tblClasses = new TableGateway('classes',$dba);
+        }
+        return $this->tblClasses;
     }
 
     /**
@@ -769,12 +794,27 @@ class PHPCD implements RpcHandler
 
     public function classes($pattern)
     {
+        $this->logger->debug('classes-pattern: ' . $pattern);
         $items = [];
-        foreach (get_declared_classes() as $name) {
-            if (!$this->matcher->match($pattern, $name)) {
-                continue;
+        $candidates = [];
+        if(false !== $this->getTblClasses()){
+            $where = new Where();
+            $where->like('name','%' . $pattern . '%');
+            $rowset = $this->tblClasses->select($where);
+            foreach($rowset as $row){
+                $candidates[] = $row['name'];
             }
+        }
+ 
+        foreach(get_declared_classes() as $name) {
+            if (!$this->matcher->match($pattern, $name)) {
+                if(! in_array($row['name'],$candidates)){
+                    $candidates[] = $row['name'];
+                }
+            }
+        }
 
+        foreach($candidates as $name) {
             $reflection = new \ReflectionClass($name);
 
             $item = [
@@ -790,7 +830,6 @@ class PHPCD implements RpcHandler
 
             $items[] = $item;
         }
-
         return $items;
     }
 
