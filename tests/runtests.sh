@@ -9,7 +9,7 @@
 
 declare -a TESTSTORUN
 
-set -eu
+set -u
 
 #by default we rebuild phpcds index every-time
 REBUILDIDX=1
@@ -62,7 +62,7 @@ function setVim(){
 	fi
 
 	if [ -z $VIM ] || [ ! -x $VIM ]; then
-		echo -e "\033[31mNo vim executable found or given!\033[0m"
+		echo -e '\033[31mNo vim executable found or given!\033[0m'
 		exit 1
 	fi
 }
@@ -71,7 +71,7 @@ while [ 0 -lt $# ]; do
 	'-e' )
 		shift
 		if [ 0 -eq $# ]; then
-			echo -e "\033[31m-e musst be followed by a vim like program!\033[0m"
+			echo -e '\033[31m-e musst be followed by a vim like program!\033[0m'
 			exit 4
 		fi
 		VIM="$1"
