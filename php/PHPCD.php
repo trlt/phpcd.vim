@@ -167,6 +167,40 @@ class PHPCD implements RpcHandler
         }
     }
 
+	private function getClassCandidatesFromDb($pattern,$ns,$imports){
+        $candidates = [];
+		$imports[] = $ns;
+        if(false !== $this->getTblClasses()){
+            $where = new Where();
+			$first = true;
+			foreach($imports as $import){
+				if($first){
+            		$where->like('name',$import . '/' . $pattern . '%');
+				}else{
+            		$where->or->like('name',$import . '/' . $pattern . '%');
+				}
+			}
+            $sql = $this->tblClasses->getSql();
+            $rowset = $this->tblClasses->select($where);
+            foreach($rowset as $row){
+                $candidates[] = $row['name'];
+            }
+        }
+		return $candidates;
+	}
+
+	private function getClassMatchesOfCurrentImports($pattern,$imports){
+		$candidates = [];
+		$keys = array_keys($imports);	
+		$len = strlen($pattern);
+		foreach($keys as $key){
+			if($pattern = substr($key,0,$len)){
+				$candidates[] = ['name' => $key, 'class' => $imports[$key]];
+			}
+		}
+		return $candidates;
+	}
+
     private function getPropertyDefLine($classReflection, $property)
     {
         $class = new \SplFileObject($classReflection->getFileName());
@@ -792,30 +826,32 @@ class PHPCD implements RpcHandler
         return $items;
     }
 
-    public function classes($pattern)
+    public function classes($pattern,$ns,$imports)
     {
-        $this->logger->debug('classes-pattern: ' . $pattern);
         $items = [];
-        $candidates = [];
-        if(false !== $this->getTblClasses()){
-            $where = new Where();
-            $where->like('name','%' . $pattern . '%');
-            $rowset = $this->tblClasses->select($where);
-            foreach($rowset as $row){
-                $candidates[] = $row['name'];
-            }
-        }
+
+		$candidates = $this->getClassMatchesOfCurrentImports($pattern,$imports);
+		$candidates = array_merge(
+			$candidates,
+			$this->getClassCandidatesFromDb($pattern,$ns,$imports)
+		);
  
         foreach(get_declared_classes() as $name) {
-            if (!$this->matcher->match($pattern, $name)) {
-                if(! in_array($row['name'],$candidates)){
-                    $candidates[] = $row['name'];
+            if ($this->matcher->match($pattern, $name)) {
+                if(! in_array($name,$candidates)){
+                    $candidates[] = $name;
                 }
             }
         }
 
         foreach($candidates as $name) {
-            $reflection = new \ReflectionClass($name);
+			if(is_array($name)){
+				$class = $name['class'];
+				$name = $name['name'];
+			}else{
+				$class = $name;
+			}
+            $reflection = new \ReflectionClass($class);
 
             $item = [
                 'word' => $name,
@@ -1082,7 +1118,10 @@ class PHPCD implements RpcHandler
                 $classmap[] = $name;
             }
         }
-
+		$classmap = array_merge(
+			$this->getClassCandidatesFromDb($pattern,'*',[]),
+			$classmap
+		);
         return array_map(function ($name) use($use_fqdn) {
             if ($use_fqdn) {
                 $name = "\\".$name;

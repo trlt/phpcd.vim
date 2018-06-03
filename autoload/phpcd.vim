@@ -96,7 +96,7 @@ function! phpcd#CompletePHP(findstart, base) " {{{
 			" only extends and implements allowed there
 			return filter(['extends', 'implements'], 'stridx(v:val, a:base) == 0')
 		elseif context =~? 'new'
-			return rpc#request(g:phpcd_channel_id, 'classes', a:base)
+			return rpc#request(g:phpcd_channel_id, 'classes', a:base, current_namespace, imports)
 		endif " }}}
 
 		if a:base =~ '^[^$]' " {{{
