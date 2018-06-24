@@ -4,6 +4,7 @@ namespace PHPCD;
 use Psr\Log\LoggerInterface as Logger;
 use Lvht\MsgpackRpc\Server as RpcServer;
 use Lvht\MsgpackRpc\Handler as RpcHandler;
+use Zend\Db\Adapter\Adapter;
 use Zend\Db\ResultSet\ResultSet;
 use Zend\Db\Sql\Ddl;
 use Zend\Db\Sql\Sql;
@@ -41,6 +42,7 @@ class PHPID implements RpcHandler
 
     private function createTables(){
         $table = new Ddl\CreateTable('classes');
+        $table->addColumn(new Ddl\Column\Varchar('filepath',255));
         $table->addColumn(new Ddl\Column\Varchar('name',255));
 
         $sql = new Sql($this->db);
@@ -62,15 +64,27 @@ class PHPID implements RpcHandler
      */
     public function update($class_name)
     {
-        list($parent, $interfaces) = $this->getClassInfo($class_name);
+        list($parent, $interfaces,$relFilename)
+                                            = $this->getClassInfo($class_name);
+        if($parent){
+            $parent = [$parent];
+        }else{
+            $parent = [];
+        }
+        $this->initDb();
+        $this->tblClasses->delete(['filepath' => $relFilename]);
 
-        $this->_update($class_name, $parent, $interfaces);
+        $this->_update($relFilename, $class_name, $parent, $interfaces);
+        $this->logger->debug("Update runned!");
     }
 
-    private function _update($class_name, $parents, $interfaces)
+    private function _update($relFilename,$class_name, $parents, $interfaces)
     {
-        $this->tblClasses->insert(['name' => $class_name]);
-        
+        $this->tblClasses->insert([
+            'filepath' => $relFilename,
+            'name' => $class_name
+        ]);
+
         foreach ($parents as $parent) {
             $this->updateParentIndex($parent, $class_name);
         }
@@ -123,6 +137,7 @@ class PHPID implements RpcHandler
 
         $count = count($files);
         $last = 0;
+        $cut = strlen($this->root) + 1;
         for ($i = 0; $i < $count; $i++) {
             //a fork is used to do not interrupt the whole indexing process
             //in case something bad occurs by the following steps
@@ -130,11 +145,18 @@ class PHPID implements RpcHandler
             $pid = pcntl_fork();
             if(! $pid){
                  $name = Parser::getClassName($files[$i]);
+                 $this->logger->info('Name: ' . $name);
                 if(! is_null($name)){
+                    $relFilename = substr($files[$i],$cut);
                      try {
                          $interfaces = class_implements($name) ?: [];
                          $parents = class_parents($name) ?: [];
-                         $this->_update($name, $parents, $interfaces);
+                         $this->_update(
+                             $relFilename,
+                             $name,
+                             $parents,
+                             $interfaces
+                        );
                      } catch (\Throwable $ignore) {
                      }
                 }
@@ -184,12 +206,13 @@ class PHPID implements RpcHandler
     }
 
     private function initDb(){
+        if($this->db instanceof Adapter){ return; }
         $this->db = DbFactory::getDb($this->root);
         if(false === $this->db){
             $this->db = DbFactory::getDb($this->root,true);
             $this->createTables();
         }
-        
+
         $this->tblClasses = new TableGateway('classes',$this->db);
     }
 
@@ -242,6 +265,14 @@ class PHPID implements RpcHandler
         return str_replace("\\", '_', $name).'.json';
     }
 
+    /**
+     * retruns an array with the following keys
+     * 0 = string|false parent-classname or false in case it has no parent
+     * 1 = array interfaces
+     * 2 = string filepath relative to project root
+     *
+     * @return array
+     */
     private function getClassInfo($name) {
         try {
             $reflection = new \ReflectionClass($name);
@@ -252,10 +283,11 @@ class PHPID implements RpcHandler
             }
 
             $interfaces = array_keys($reflection->getInterfaces());
-
-            return [$parent, $interfaces];
+            $relFilename = $reflection->getFileName();
+            $relFilename = substr($relFilename,strlen($this->root) + 1);
+            return [$parent, $interfaces,$relFilename];
         } catch (\Exception $e) {
-            return [null, []];
+            return [false, [], false];
         }
     }
 }
